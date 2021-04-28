@@ -1,0 +1,39 @@
+[property]
+enable = 1
+config-width = 1280
+config-height = 720
+osd-mode = 2
+display-font-size = 12
+
+[line-crossing-stream-0]
+enable = 1
+line-crossing-Entry = 774;656;967;393;609;333;1132;717
+line-crossing-Exit = 967;393;774;656;609;333;1132;717
+class-id = 0
+extended = 0
+mode = loose
+
+[line-crossing-stream-1]
+enable = 1
+line-crossing-Entry = 1190;1027;1249;378;200;610;2239;796
+line-crossing-Exit = 1249;378;1190;1027;200;610;2239;796
+class-id = 0
+extended = 0
+mode = loose
+
+[line-crossing-stream-2]
+enable = 1
+line-crossing-Entry = 1036;719;1024;230;190;496;1869;454
+line-crossing-Exit = 1024;230;1036;719;190;496;1869;454
+class-id = 2
+extended = 0
+mode = loose
+
+[line-crossing-stream-3]
+enable = 1
+line-crossing-Entry = 954;267;973;756;30;548;1897;475
+line-crossing-Exit = 973;756;954;267;30;548;1897;475
+class-id = 2
+extended = 0
+mode = loose
+

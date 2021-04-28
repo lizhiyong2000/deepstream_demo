@@ -7,7 +7,7 @@ find_package(PkgConfig)
 pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0)
 
 
-set(NVDS_VERSION 5.1)
+set(NVDS_VERSION 5.0)
 
 set(NVDS_DIR "/opt/nvidia/deepstream/deepstream-${NVDS_VERSION}")
 
@@ -44,3 +44,5 @@ link_libraries(
 
   
 add_executable(va_worker src/video_analytics_worker.cpp)
+
+add_executable(va_linecrossing src/line_crossing_worker.cpp)

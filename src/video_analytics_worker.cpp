@@ -30,8 +30,10 @@
 
 #define PGIE_CLASS_ID_VEHICLE 0
 #define PGIE_CLASS_ID_PERSON 2
-#define SET_GPU_ID(object, gpu_id) g_object_set(G_OBJECT(object), "gpu-id", gpu_id, NULL);
-#define SET_MEMORY(object, mem_id) g_object_set(G_OBJECT(object), "nvbuf-memory-type", mem_id, NULL);
+#define SET_GPU_ID(object, gpu_id)                                             \
+    g_object_set(G_OBJECT(object), "gpu-id", gpu_id, NULL);
+#define SET_MEMORY(object, mem_id)                                             \
+    g_object_set(G_OBJECT(object), "nvbuf-memory-type", mem_id, NULL);
 #define SINK_ELEMENT "nveglglessink"
 
 GMainLoop *loop = NULL;
@@ -45,11 +47,11 @@ GMainLoop *loop = NULL;
 #define TILED_OUTPUT_HEIGHT 720
 #define GPU_ID 0
 #define MAX_NUM_SOURCES 4
-#define PGIE_CONFIG_FILE "../dstest_pgie_config.txt"
-#define TRACKER_CONFIG_FILE "../dstest_tracker_config.txt"
-#define SGIE1_CONFIG_FILE "../dstest_sgie1_config.txt"
-#define SGIE2_CONFIG_FILE "../dstest_sgie2_config.txt"
-#define SGIE3_CONFIG_FILE "../dstest_sgie3_config.txt"
+#define PGIE_CONFIG_FILE "../config/ds_test/dstest_pgie_config.txt"
+#define TRACKER_CONFIG_FILE "../config/ds_test/dstest_tracker_config.txt"
+#define SGIE1_CONFIG_FILE "../config/ds_test/dstest_sgie1_config.txt"
+#define SGIE2_CONFIG_FILE "../config/ds_test/dstest_sgie2_config.txt"
+#define SGIE3_CONFIG_FILE "../config/ds_test/dstest_sgie3_config.txt"
 
 #define CONFIG_GPU_ID "gpu-id"
 #define CONFIG_GROUP_TRACKER "tracker"
@@ -67,18 +69,22 @@ GstElement **g_source_bin_list = NULL;
 GMutex eos_lock;
 
 /* Assuming Resnet 10 model packaged in DS SDK */
-// gchar pgie_classes_str[4][32] = {"Vehicle", "TwoWheeler", "Person", "Roadsign"};
+// gchar pgie_classes_str[4][32] = {"Vehicle", "TwoWheeler", "Person",
+// "Roadsign"};
 gchar pgie_classes_str[4][32] = {"Vehicle", "TwoWheeler", "Person"};
 
-GstElement *pipeline = NULL, *streammux = NULL, *sink = NULL, *pgie = NULL, *sgie1 = NULL, *sgie2 = NULL, *sgie3 = NULL,
-           *nvvideoconvert = NULL, *nvosd = NULL, *tiler = NULL, *tracker = NULL;
+GstElement *pipeline = NULL, *streammux = NULL, *sink = NULL, *pgie = NULL,
+           *sgie1 = NULL, *sgie2 = NULL, *sgie3 = NULL, *nvvideoconvert = NULL,
+           *nvosd = NULL, *tiler = NULL, *tracker = NULL;
 
 gchar *uri = NULL;
 
-static void decodebin_child_added(GstChildProxy *child_proxy, GObject *object, gchar *name, gpointer user_data) {
+static void decodebin_child_added(GstChildProxy *child_proxy, GObject *object,
+                                  gchar *name, gpointer user_data) {
     g_print("decodebin child added %s\n", name);
     if (g_strrstr(name, "decodebin") == name) {
-        g_signal_connect(G_OBJECT(object), "child-added", G_CALLBACK(decodebin_child_added), user_data);
+        g_signal_connect(G_OBJECT(object), "child-added",
+                         G_CALLBACK(decodebin_child_added), user_data);
     }
     if (g_strrstr(name, "nvv4l2decoder") == name) {
 #ifdef PLATFORM_TEGRA
@@ -151,8 +157,11 @@ static GstElement *create_uridecode_bin(guint index, gchar *filename) {
     g_snprintf(bin_name, 15, "source-bin-%02d", index);
     bin = gst_element_factory_make("uridecodebin", bin_name);
     g_object_set(G_OBJECT(bin), "uri", filename, NULL);
-    g_signal_connect(G_OBJECT(bin), "pad-added", G_CALLBACK(cb_newpad), &g_source_id_list[index]);
-    g_signal_connect(G_OBJECT(bin), "child-added", G_CALLBACK(decodebin_child_added), &g_source_id_list[index]);
+    g_signal_connect(G_OBJECT(bin), "pad-added", G_CALLBACK(cb_newpad),
+                     &g_source_id_list[index]);
+    g_signal_connect(G_OBJECT(bin), "child-added",
+                     G_CALLBACK(decodebin_child_added),
+                     &g_source_id_list[index]);
     g_source_enabled[index] = TRUE;
 
     return bin;
@@ -162,41 +171,43 @@ static void stop_release_source(gint source_id) {
     GstStateChangeReturn state_return;
     gchar pad_name[16];
     GstPad *sinkpad = NULL;
-    state_return = gst_element_set_state(g_source_bin_list[source_id], GST_STATE_NULL);
+    state_return =
+        gst_element_set_state(g_source_bin_list[source_id], GST_STATE_NULL);
     switch (state_return) {
-        case GST_STATE_CHANGE_SUCCESS:
-            g_print("STATE CHANGE SUCCESS\n\n");
-            g_snprintf(pad_name, 15, "sink_%u", source_id);
-            sinkpad = gst_element_get_static_pad(streammux, pad_name);
-            gst_pad_send_event(sinkpad, gst_event_new_flush_stop(FALSE));
-            gst_element_release_request_pad(streammux, sinkpad);
-            g_print("STATE CHANGE SUCCESS %p\n\n", sinkpad);
-            gst_object_unref(sinkpad);
-            gst_bin_remove(GST_BIN(pipeline), g_source_bin_list[source_id]);
-            source_id--;
-            g_num_sources--;
-            break;
-        case GST_STATE_CHANGE_FAILURE:
-            g_print("STATE CHANGE FAILURE\n\n");
-            break;
-        case GST_STATE_CHANGE_ASYNC:
-            g_print("STATE CHANGE ASYNC\n\n");
-            state_return = gst_element_get_state(g_source_bin_list[source_id], NULL, NULL, GST_CLOCK_TIME_NONE);
-            g_snprintf(pad_name, 15, "sink_%u", source_id);
-            sinkpad = gst_element_get_static_pad(streammux, pad_name);
-            gst_pad_send_event(sinkpad, gst_event_new_flush_stop(FALSE));
-            gst_element_release_request_pad(streammux, sinkpad);
-            g_print("STATE CHANGE ASYNC %p\n\n", sinkpad);
-            gst_object_unref(sinkpad);
-            gst_bin_remove(GST_BIN(pipeline), g_source_bin_list[source_id]);
-            source_id--;
-            g_num_sources--;
-            break;
-        case GST_STATE_CHANGE_NO_PREROLL:
-            g_print("STATE CHANGE NO PREROLL\n\n");
-            break;
-        default:
-            break;
+    case GST_STATE_CHANGE_SUCCESS:
+        g_print("STATE CHANGE SUCCESS\n\n");
+        g_snprintf(pad_name, 15, "sink_%u", source_id);
+        sinkpad = gst_element_get_static_pad(streammux, pad_name);
+        gst_pad_send_event(sinkpad, gst_event_new_flush_stop(FALSE));
+        gst_element_release_request_pad(streammux, sinkpad);
+        g_print("STATE CHANGE SUCCESS %p\n\n", sinkpad);
+        gst_object_unref(sinkpad);
+        gst_bin_remove(GST_BIN(pipeline), g_source_bin_list[source_id]);
+        source_id--;
+        g_num_sources--;
+        break;
+    case GST_STATE_CHANGE_FAILURE:
+        g_print("STATE CHANGE FAILURE\n\n");
+        break;
+    case GST_STATE_CHANGE_ASYNC:
+        g_print("STATE CHANGE ASYNC\n\n");
+        state_return = gst_element_get_state(g_source_bin_list[source_id], NULL,
+                                             NULL, GST_CLOCK_TIME_NONE);
+        g_snprintf(pad_name, 15, "sink_%u", source_id);
+        sinkpad = gst_element_get_static_pad(streammux, pad_name);
+        gst_pad_send_event(sinkpad, gst_event_new_flush_stop(FALSE));
+        gst_element_release_request_pad(streammux, sinkpad);
+        g_print("STATE CHANGE ASYNC %p\n\n", sinkpad);
+        gst_object_unref(sinkpad);
+        gst_bin_remove(GST_BIN(pipeline), g_source_bin_list[source_id]);
+        source_id--;
+        g_num_sources--;
+        break;
+    case GST_STATE_CHANGE_NO_PREROLL:
+        g_print("STATE CHANGE NO PREROLL\n\n");
+        break;
+    default:
+        break;
     }
 }
 
@@ -204,7 +215,8 @@ static gboolean delete_sources(gpointer data) {
     gint source_id;
     g_mutex_lock(&eos_lock);
     for (source_id = 0; source_id < MAX_NUM_SOURCES; source_id++) {
-        if (g_eos_list[source_id] == TRUE && g_source_enabled[source_id] == TRUE) {
+        if (g_eos_list[source_id] == TRUE &&
+            g_source_enabled[source_id] == TRUE) {
             g_source_enabled[source_id] = FALSE;
             stop_release_source(source_id);
         }
@@ -257,37 +269,40 @@ static gboolean add_sources(gpointer data) {
 
     if (g_num_sources == 0) {
         g_print("Now playing: %s\n", uri);
-        if (gst_element_set_state(pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
+        if (gst_element_set_state(pipeline, GST_STATE_PLAYING) ==
+            GST_STATE_CHANGE_FAILURE) {
             g_printerr("Failed to set pipeline to playing. Exiting.\n");
             return -1;
         }
     }
 
-    state_return = gst_element_set_state(g_source_bin_list[source_id], GST_STATE_PLAYING);
+    state_return =
+        gst_element_set_state(g_source_bin_list[source_id], GST_STATE_PLAYING);
     switch (state_return) {
-        case GST_STATE_CHANGE_SUCCESS:
-            g_print("STATE CHANGE SUCCESS\n\n");
-            source_id++;
-            break;
-        case GST_STATE_CHANGE_FAILURE:
-            g_print("STATE CHANGE FAILURE\n\n");
-            break;
-        case GST_STATE_CHANGE_ASYNC:
-            g_print("STATE CHANGE ASYNC\n\n");
-            state_return = gst_element_get_state(g_source_bin_list[source_id], NULL, NULL, GST_CLOCK_TIME_NONE);
-            source_id++;
-            break;
-        case GST_STATE_CHANGE_NO_PREROLL:
-            g_print("STATE CHANGE NO PREROLL\n\n");
-            break;
-        default:
-            break;
+    case GST_STATE_CHANGE_SUCCESS:
+        g_print("STATE CHANGE SUCCESS\n\n");
+        source_id++;
+        break;
+    case GST_STATE_CHANGE_FAILURE:
+        g_print("STATE CHANGE FAILURE\n\n");
+        break;
+    case GST_STATE_CHANGE_ASYNC:
+        g_print("STATE CHANGE ASYNC\n\n");
+        state_return = gst_element_get_state(g_source_bin_list[source_id], NULL,
+                                             NULL, GST_CLOCK_TIME_NONE);
+        source_id++;
+        break;
+    case GST_STATE_CHANGE_NO_PREROLL:
+        g_print("STATE CHANGE NO PREROLL\n\n");
+        break;
+    default:
+        break;
     }
     g_num_sources++;
 
     if (g_num_sources == MAX_NUM_SOURCES) {
-        /* We have reached MAX_NUM_SOURCES to be added, no stop calling this function
-         * and enable calling delete sources
+        /* We have reached MAX_NUM_SOURCES to be added, no stop calling this
+         * function and enable calling delete sources
          */
         g_timeout_add_seconds(10, delete_sources, (gpointer)g_source_bin_list);
         return FALSE;
@@ -299,55 +314,58 @@ static gboolean add_sources(gpointer data) {
 static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
     GMainLoop *loop = (GMainLoop *)data;
     switch (GST_MESSAGE_TYPE(msg)) {
-        case GST_MESSAGE_EOS:
-            g_print("End of stream\n");
-            g_main_loop_quit(loop);
-            break;
-        case GST_MESSAGE_WARNING: {
-            gchar *debug;
-            GError *error;
-            gst_message_parse_warning(msg, &error, &debug);
-            g_printerr("WARNING from element %s: %s\n", GST_OBJECT_NAME(msg->src), error->message);
-            g_free(debug);
-            g_printerr("Warning: %s\n", error->message);
-            g_error_free(error);
-            break;
-        }
-        case GST_MESSAGE_ERROR: {
-            gchar *debug;
-            GError *error;
-            gst_message_parse_error(msg, &error, &debug);
-            g_printerr("ERROR from element %s: %s\n", GST_OBJECT_NAME(msg->src), error->message);
-            if (debug) g_printerr("Error details: %s\n", debug);
-            g_free(debug);
-            g_error_free(error);
-            g_main_loop_quit(loop);
-            break;
-        }
-        case GST_MESSAGE_ELEMENT: {
-            if (gst_nvmessage_is_stream_eos(msg)) {
-                guint stream_id;
-                if (gst_nvmessage_parse_stream_eos(msg, &stream_id)) {
-                    g_print("Got EOS from stream %d\n", stream_id);
-                    g_mutex_lock(&eos_lock);
-                    g_eos_list[stream_id] = TRUE;
-                    g_mutex_unlock(&eos_lock);
-                }
+    case GST_MESSAGE_EOS:
+        g_print("End of stream\n");
+        g_main_loop_quit(loop);
+        break;
+    case GST_MESSAGE_WARNING: {
+        gchar *debug;
+        GError *error;
+        gst_message_parse_warning(msg, &error, &debug);
+        g_printerr("WARNING from element %s: %s\n", GST_OBJECT_NAME(msg->src),
+                   error->message);
+        g_free(debug);
+        g_printerr("Warning: %s\n", error->message);
+        g_error_free(error);
+        break;
+    }
+    case GST_MESSAGE_ERROR: {
+        gchar *debug;
+        GError *error;
+        gst_message_parse_error(msg, &error, &debug);
+        g_printerr("ERROR from element %s: %s\n", GST_OBJECT_NAME(msg->src),
+                   error->message);
+        if (debug)
+            g_printerr("Error details: %s\n", debug);
+        g_free(debug);
+        g_error_free(error);
+        g_main_loop_quit(loop);
+        break;
+    }
+    case GST_MESSAGE_ELEMENT: {
+        if (gst_nvmessage_is_stream_eos(msg)) {
+            guint stream_id;
+            if (gst_nvmessage_parse_stream_eos(msg, &stream_id)) {
+                g_print("Got EOS from stream %d\n", stream_id);
+                g_mutex_lock(&eos_lock);
+                g_eos_list[stream_id] = TRUE;
+                g_mutex_unlock(&eos_lock);
             }
-            break;
         }
-        default:
-            break;
+        break;
+    }
+    default:
+        break;
     }
     return TRUE;
 }
 
 /* Tracker config parsing */
 
-#define CHECK_ERROR(error)                                                   \
-    if (error) {                                                             \
-        g_printerr("Error while parsing config file: %s\n", error->message); \
-        goto done;                                                           \
+#define CHECK_ERROR(error)                                                     \
+    if (error) {                                                               \
+        g_printerr("Error while parsing config file: %s\n", error->message);   \
+        goto done;                                                             \
     }
 
 static gboolean set_tracker_properties(GstElement *nvtracker) {
@@ -357,7 +375,8 @@ static gboolean set_tracker_properties(GstElement *nvtracker) {
     gchar **key = NULL;
     GKeyFile *key_file = g_key_file_new();
 
-    if (!g_key_file_load_from_file(key_file, TRACKER_CONFIG_FILE, G_KEY_FILE_NONE, &error)) {
+    if (!g_key_file_load_from_file(key_file, TRACKER_CONFIG_FILE,
+                                   G_KEY_FILE_NONE, &error)) {
         g_printerr("Failed to load config file: %s\n", error->message);
         return FALSE;
     }
@@ -367,36 +386,50 @@ static gboolean set_tracker_properties(GstElement *nvtracker) {
 
     for (key = keys; *key; key++) {
         if (!g_strcmp0(*key, CONFIG_GROUP_TRACKER_WIDTH)) {
-            gint width = g_key_file_get_integer(key_file, CONFIG_GROUP_TRACKER, CONFIG_GROUP_TRACKER_WIDTH, &error);
+            gint width =
+                g_key_file_get_integer(key_file, CONFIG_GROUP_TRACKER,
+                                       CONFIG_GROUP_TRACKER_WIDTH, &error);
             CHECK_ERROR(error);
             g_object_set(G_OBJECT(nvtracker), "tracker-width", width, NULL);
         } else if (!g_strcmp0(*key, CONFIG_GROUP_TRACKER_HEIGHT)) {
-            gint height = g_key_file_get_integer(key_file, CONFIG_GROUP_TRACKER, CONFIG_GROUP_TRACKER_HEIGHT, &error);
+            gint height =
+                g_key_file_get_integer(key_file, CONFIG_GROUP_TRACKER,
+                                       CONFIG_GROUP_TRACKER_HEIGHT, &error);
             CHECK_ERROR(error);
             g_object_set(G_OBJECT(nvtracker), "tracker-height", height, NULL);
         } else if (!g_strcmp0(*key, CONFIG_GPU_ID)) {
-            guint gpu_id = g_key_file_get_integer(key_file, CONFIG_GROUP_TRACKER, CONFIG_GPU_ID, &error);
+            guint gpu_id = g_key_file_get_integer(
+                key_file, CONFIG_GROUP_TRACKER, CONFIG_GPU_ID, &error);
             CHECK_ERROR(error);
             g_object_set(G_OBJECT(nvtracker), "gpu_id", gpu_id, NULL);
         } else if (!g_strcmp0(*key, CONFIG_GROUP_TRACKER_LL_CONFIG_FILE)) {
             char *ll_config_file = get_absolute_file_path(
                 TRACKER_CONFIG_FILE,
-                g_key_file_get_string(key_file, CONFIG_GROUP_TRACKER, CONFIG_GROUP_TRACKER_LL_CONFIG_FILE, &error));
+                g_key_file_get_string(key_file, CONFIG_GROUP_TRACKER,
+                                      CONFIG_GROUP_TRACKER_LL_CONFIG_FILE,
+                                      &error));
             CHECK_ERROR(error);
-            g_object_set(G_OBJECT(nvtracker), "ll-config-file", ll_config_file, NULL);
+            g_object_set(G_OBJECT(nvtracker), "ll-config-file", ll_config_file,
+                         NULL);
         } else if (!g_strcmp0(*key, CONFIG_GROUP_TRACKER_LL_LIB_FILE)) {
             char *ll_lib_file = get_absolute_file_path(
                 TRACKER_CONFIG_FILE,
-                g_key_file_get_string(key_file, CONFIG_GROUP_TRACKER, CONFIG_GROUP_TRACKER_LL_LIB_FILE, &error));
+                g_key_file_get_string(key_file, CONFIG_GROUP_TRACKER,
+                                      CONFIG_GROUP_TRACKER_LL_LIB_FILE,
+                                      &error));
             CHECK_ERROR(error);
             g_object_set(G_OBJECT(nvtracker), "ll-lib-file", ll_lib_file, NULL);
-        } else if (!g_strcmp0(*key, CONFIG_GROUP_TRACKER_ENABLE_BATCH_PROCESS)) {
-            gboolean enable_batch_process = g_key_file_get_integer(key_file, CONFIG_GROUP_TRACKER,
-                                                                   CONFIG_GROUP_TRACKER_ENABLE_BATCH_PROCESS, &error);
+        } else if (!g_strcmp0(*key,
+                              CONFIG_GROUP_TRACKER_ENABLE_BATCH_PROCESS)) {
+            gboolean enable_batch_process = g_key_file_get_integer(
+                key_file, CONFIG_GROUP_TRACKER,
+                CONFIG_GROUP_TRACKER_ENABLE_BATCH_PROCESS, &error);
             CHECK_ERROR(error);
-            g_object_set(G_OBJECT(nvtracker), "enable_batch_process", enable_batch_process, NULL);
+            g_object_set(G_OBJECT(nvtracker), "enable_batch_process",
+                         enable_batch_process, NULL);
         } else {
-            g_printerr("Unknown key '%s' for group [%s]", *key, CONFIG_GROUP_TRACKER);
+            g_printerr("Unknown key '%s' for group [%s]", *key,
+                       CONFIG_GROUP_TRACKER);
         }
     }
 
@@ -454,7 +487,8 @@ int main(int argc, char *argv[]) {
     gst_bin_add(GST_BIN(pipeline), streammux);
     g_object_set(G_OBJECT(streammux), "live-source", 1, NULL);
 
-    g_source_bin_list = (GstElement **)g_malloc0(sizeof(GstElement *) * MAX_NUM_SOURCES);
+    g_source_bin_list =
+        (GstElement **)g_malloc0(sizeof(GstElement *) * MAX_NUM_SOURCES);
     uri = g_strdup(argv[1]);
     // for (i = 0; i < /*num_sources */ 1; i++) {
     //     GstElement *source_bin = create_uridecode_bin(i, argv[i + 1]);
@@ -480,7 +514,8 @@ int main(int argc, char *argv[]) {
     tiler = gst_element_factory_make("nvmultistreamtiler", "nvtiler");
 
     /* Use convertor to convert from NV12 to RGBA as required by nvosd */
-    nvvideoconvert = gst_element_factory_make("nvvideoconvert", "nvvideo-converter");
+    nvvideoconvert =
+        gst_element_factory_make("nvvideoconvert", "nvvideo-converter");
 #ifdef PLATFORM_TEGRA
     nvtransform = gst_element_factory_make("nvegltransform", "nvegltransform");
 #endif
@@ -490,14 +525,18 @@ int main(int argc, char *argv[]) {
 
     tracker = gst_element_factory_make("nvtracker", "nvtracker");
 
-    sgie1 = gst_element_factory_make("nvinfer", "secondary-nvinference-engine1");
-    sgie2 = gst_element_factory_make("nvinfer", "secondary-nvinference-engine2");
-    sgie3 = gst_element_factory_make("nvinfer", "secondary-nvinference-engine3");
+    sgie1 =
+        gst_element_factory_make("nvinfer", "secondary-nvinference-engine1");
+    sgie2 =
+        gst_element_factory_make("nvinfer", "secondary-nvinference-engine2");
+    sgie3 =
+        gst_element_factory_make("nvinfer", "secondary-nvinference-engine3");
 
     /* Finally render the osd output */
     sink = gst_element_factory_make(SINK_ELEMENT, "nveglglessink");
 
-    if (!pgie || !sgie1 || !sgie2 || !sgie3 || !tiler || !nvvideoconvert || !nvosd || !sink || !tracker
+    if (!pgie || !sgie1 || !sgie2 || !sgie3 || !tiler || !nvvideoconvert ||
+        !nvosd || !sink || !tracker
 #ifdef PLATFORM_TEGRA
         || !nvtransform
 #endif
@@ -506,7 +545,8 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    g_object_set(G_OBJECT(streammux), "width", MUXER_OUTPUT_WIDTH, "height", MUXER_OUTPUT_HEIGHT, NULL);
+    g_object_set(G_OBJECT(streammux), "width", MUXER_OUTPUT_WIDTH, "height",
+                 MUXER_OUTPUT_HEIGHT, NULL);
 
     /* Set all the necessary properties of the nvinfer element,
      * the necessary ones are : */
@@ -525,8 +565,10 @@ int main(int argc, char *argv[]) {
      * the necessary ones are : */
     g_object_get(G_OBJECT(pgie), "batch-size", &pgie_batch_size, NULL);
     if (pgie_batch_size < MAX_NUM_SOURCES) {
-        g_printerr("WARNING: Overriding infer-config batch-size (%d) with number of sources (%d)\n", pgie_batch_size,
-                   num_sources);
+        g_printerr(
+            "WARNING: Overriding infer-config batch-size (%d) with number "
+            "of sources (%d)\n",
+            pgie_batch_size, num_sources);
         g_object_set(G_OBJECT(pgie), "batch-size", MAX_NUM_SOURCES, NULL);
     }
 
@@ -539,8 +581,9 @@ int main(int argc, char *argv[]) {
     tiler_rows = (guint)sqrt(num_sources);
     tiler_columns = (guint)ceil(1.0 * num_sources / tiler_rows);
     /* we set the osd properties here */
-    g_object_set(G_OBJECT(tiler), "rows", tiler_rows, "columns", tiler_columns, "width", TILED_OUTPUT_WIDTH, "height",
-                 TILED_OUTPUT_HEIGHT, NULL);
+    g_object_set(G_OBJECT(tiler), "rows", tiler_rows, "columns", tiler_columns,
+                 "width", TILED_OUTPUT_WIDTH, "height", TILED_OUTPUT_HEIGHT,
+                 NULL);
     SET_GPU_ID(tiler, GPU_ID);
     SET_GPU_ID(nvvideoconvert, GPU_ID);
     SET_GPU_ID(nvosd, GPU_ID);
@@ -555,7 +598,8 @@ int main(int argc, char *argv[]) {
 
     /* Set up the pipeline */
     /* we add all elements into the pipeline */
-    gst_bin_add_many(GST_BIN(pipeline), pgie, tracker, sgie1, sgie2, sgie3, tiler, nvvideoconvert, nvosd, sink, NULL);
+    gst_bin_add_many(GST_BIN(pipeline), pgie, tracker, sgie1, sgie2, sgie3,
+                     tiler, nvvideoconvert, nvosd, sink, NULL);
 
 #ifdef PLATFORM_TEGRA
     gst_bin_add(GST_BIN(pipeline), nvtransform);
@@ -565,14 +609,15 @@ int main(int argc, char *argv[]) {
     /* file-source -> h264-parser -> nvh264-decoder ->
      * nvinfer -> nvvideoconvert -> nvosd -> video-renderer */
 #ifdef PLATFORM_TEGRA
-    if (!gst_element_link_many(streammux, pgie, tracker, sgie1, sgie2, sgie3, tiler, nvvideoconvert, nvosd, nvtransform,
-                               sink, NULL)) {
+    if (!gst_element_link_many(streammux, pgie, tracker, sgie1, sgie2, sgie3,
+                               tiler, nvvideoconvert, nvosd, nvtransform, sink,
+                               NULL)) {
         g_printerr("Elements could not be linked. Exiting.\n");
         return -1;
     }
 #else
-    if (!gst_element_link_many(streammux, pgie, tracker, sgie1, sgie2, sgie3, tiler, nvvideoconvert, nvosd, sink,
-                               NULL)) {
+    if (!gst_element_link_many(streammux, pgie, tracker, sgie1, sgie2, sgie3,
+                               tiler, nvvideoconvert, nvosd, sink, NULL)) {
         g_printerr("Elements could not be linked. Exiting.\n");
         return -1;
     }
@@ -584,11 +629,13 @@ int main(int argc, char *argv[]) {
 
     /* Set the pipeline to "playing" state */
     // g_print("Now playing: %s\n", argv[1]);
-    // if (gst_element_set_state(pipeline, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
+    // if (gst_element_set_state(pipeline, GST_STATE_PLAYING) ==
+    // GST_STATE_CHANGE_FAILURE) {
     //     g_printerr("Failed to set pipeline to playing. Exiting.\n");
     //     return -1;
     // }
-    // GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "ds-app-playing");
+    // GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (pipeline),
+    // GST_DEBUG_GRAPH_SHOW_ALL, "ds-app-playing");
 
     /* Wait till pipeline encounters an error or EOS */
     g_print("Running...\n");
